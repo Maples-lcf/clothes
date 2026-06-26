@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { generateXianyuCopyFromImage, type XianyuCopyContext } from '../../shared/xianyuCopy.ts'
+import { generateXianyuCopyFromImage, type XianyuCopyContext } from '../lib/xianyuCopy.ts'
 
 interface GenerateRequest extends XianyuCopyContext {
   imageUrl?: string

@@ -1,45 +1,47 @@
-import { generateXianyuCopyFromImage, type XianyuCopyContext } from '../../lib/xianyuCopy.ts'
+import { generateXianyuCopyFromImage, type XianyuCopyContext } from '../../lib/xianyuCopy'
+
+export const config = {
+  runtime: 'edge',
+}
 
 interface GenerateRequest extends XianyuCopyContext {
   imageUrl?: string
 }
 
-type ApiRequest = {
-  method?: string
-  headers: { authorization?: string }
-  body?: GenerateRequest | string
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
 }
 
-type ApiResponse = {
-  status: (code: number) => ApiResponse
-  json: (body: unknown) => void
-}
-
-export default async function handler(req: ApiRequest, res: ApiResponse) {
-  if (req.method !== 'POST') {
-    res.status(405).json({ ok: false, error: 'Method Not Allowed' })
-    return
+export default async function handler(request: Request) {
+  if (request.method !== 'POST') {
+    return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405)
   }
 
-  const authHeader = req.headers.authorization
+  const authHeader = request.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) {
-    res.status(401).json({ ok: false, error: '请先登录' })
-    return
+    return jsonResponse({ ok: false, error: '请先登录' }, 401)
   }
 
-  const body = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body) as GenerateRequest
+  let body: GenerateRequest
+  try {
+    body = (await request.json()) as GenerateRequest
+  } catch {
+    return jsonResponse({ ok: false, error: '请求体格式错误' }, 400)
+  }
+
   if (!body?.imageUrl?.trim()) {
-    res.status(400).json({ ok: false, error: '请先上传商品图片' })
-    return
+    return jsonResponse({ ok: false, error: '请先上传商品图片' }, 400)
   }
 
   const apiKey = process.env.AI_VISION_API_KEY ?? ''
   if (!apiKey) {
-    res.status(500).json({
-      ok: false,
-      error: '未配置 AI_VISION_API_KEY，请在 Vercel 环境变量中添加',
-    })
-    return
+    return jsonResponse(
+      { ok: false, error: '未配置 AI_VISION_API_KEY，请在 Vercel 环境变量中添加' },
+      500,
+    )
   }
 
   try {
@@ -59,9 +61,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       },
     )
 
-    res.status(200).json({ ok: true, ...result })
+    return jsonResponse({ ok: true, ...result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'AI 文案生成失败'
-    res.status(500).json({ ok: false, error: message })
+    return jsonResponse({ ok: false, error: message }, 500)
   }
 }
