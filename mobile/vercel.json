@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/ai/generate-xianyu-copy.ts": {
-      "runtime": "edge"
+      "maxDuration": 30
     }
   },
   "rewrites": [

@@ -53,38 +53,7 @@ async function requestApi(params: GenerateXianyuCopyParams) {
   return payload
 }
 
-async function requestEdge(params: GenerateXianyuCopyParams) {
-  const { data, error } = await supabase.functions.invoke('generate-xianyu-copy', {
-    body: {
-      imageUrl: params.imageUrl,
-      category: params.category,
-      sourceType: params.sourceType,
-      sellPrice: params.sellPrice,
-      color: params.color,
-      size: params.size,
-    },
-  })
-
-  if (error) throw error
-
-  const payload = data as GenerateXianyuCopyResponse | null
-  if (!payload?.ok || !payload.name || !payload.description) {
-    throw new Error(payload?.error ?? 'AI 文案生成失败')
-  }
-
-  return payload
-}
-
-/** 优先同源 API（Vercel Serverless / 本地 Vite 中间件），失败再试 Edge Function */
+/** 调用同源 API 生成闲鱼文案（Vercel Serverless / 本地 Vite 中间件） */
 export async function generateXianyuCopy(params: GenerateXianyuCopyParams) {
-  try {
-    return await requestApi(params)
-  } catch (apiError) {
-    if (import.meta.env.DEV) throw apiError
-    try {
-      return await requestEdge(params)
-    } catch {
-      throw apiError
-    }
-  }
+  return requestApi(params)
 }
