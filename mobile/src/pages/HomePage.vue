@@ -1,21 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { useAuthStore } from '@/stores/auth'
-import { fetchMonthSummary } from '@/services/sales'
-import { formatMoney } from '@/utils/money'
+import SalesAnalysisCard from '@/components/SalesAnalysisCard.vue'
+import XianyuAccountCards from '@/components/XianyuAccountCards.vue'
+import { fetchHomeDashboardStats, type HomeDashboardStats } from '@/services/dashboard'
+import { formatMoney, formatPercent } from '@/utils/money'
 
 const router = useRouter()
 const auth = useAuthStore()
-const summary = ref({ totalQuantity: 0, totalProfit: 0 })
+const loading = ref(false)
+const stats = ref<HomeDashboardStats | null>(null)
 
 const actions = [
   {
     key: 'new',
     title: '上新',
     desc: '闲鱼发布后，拍照录入商品',
-    icon: '📦',
+    icon: 'photograph',
     color: '#409eff',
     path: '/new',
   },
@@ -23,7 +26,7 @@ const actions = [
     key: 'sold',
     title: '售出下架',
     desc: '卖出后记账，自动下架',
-    icon: '✅',
+    icon: 'passed',
     color: '#67c23a',
     path: '/sold',
   },
@@ -31,7 +34,7 @@ const actions = [
     key: 'delist',
     title: '主动下架',
     desc: '暂时不卖，保留库存',
-    icon: '⏸',
+    icon: 'pause-circle-o',
     color: '#e6a23c',
     path: '/delist',
   },
@@ -39,19 +42,51 @@ const actions = [
     key: 'active',
     title: '在售列表',
     desc: '查看在售商品，快捷操作',
-    icon: '📋',
-    color: '#909399',
+    icon: 'orders-o',
+    color: '#606266',
     path: '/active',
   },
 ]
 
-onMounted(async () => {
+const statCards = computed(() => [
+  {
+    key: 'products',
+    label: '商品数',
+    value: String(stats.value?.productCount ?? 0),
+    sub: '在售商品总量',
+    icon: 'shop-o',
+    color: '#409eff',
+  },
+  {
+    key: 'stock',
+    label: 'SKU / 库存',
+    value: `${stats.value?.skuCount ?? 0} / ${stats.value?.totalStock ?? 0}`,
+    sub: '规格数 / 库存件数',
+    icon: 'balance-list-o',
+    color: '#67c23a',
+  },
+  {
+    key: 'profit',
+    label: '本月利润',
+    value: formatMoney(stats.value?.monthProfit),
+    sub: `已售 ${stats.value?.monthQuantity ?? 0} 件 · 销售额 ${formatMoney(stats.value?.monthSales)} · 利润率 ${formatPercent(stats.value?.monthProfitRate)}`,
+    icon: 'gold-coin-o',
+    color: '#f56c6c',
+  },
+])
+
+onMounted(loadData)
+
+async function loadData() {
+  loading.value = true
   try {
-    summary.value = await fetchMonthSummary()
+    stats.value = await fetchHomeDashboardStats()
   } catch {
     // ignore
+  } finally {
+    loading.value = false
   }
-})
+}
 
 async function handleLogout() {
   try {
@@ -78,9 +113,32 @@ async function handleLogout() {
     </div>
 
     <div class="page-body">
-      <div class="summary-bar">
-        本月已售 <strong>{{ summary.totalQuantity }}</strong> 件 · 利润
-        <strong>{{ formatMoney(summary.totalProfit) }}</strong>
+      <div class="dashboard-section">
+        <van-loading v-if="loading" vertical class="page-loading">加载中...</van-loading>
+
+        <template v-else>
+          <div class="overview-card">
+            <div class="overview-header">数据概览</div>
+            <div class="overview-body">
+              <div
+                v-for="card in statCards"
+                :key="card.key"
+                class="overview-item"
+                :class="{ 'overview-item-wide': card.key === 'profit' }"
+              >
+                <div class="overview-item-top">
+                  <van-icon :name="card.icon" size="18" :color="card.color" class="overview-icon" />
+                  <div class="overview-label">{{ card.label }}</div>
+                </div>
+                <div class="overview-value">{{ card.value }}</div>
+                <div class="overview-sub">{{ card.sub }}</div>
+              </div>
+            </div>
+          </div>
+
+          <SalesAnalysisCard />
+          <XianyuAccountCards />
+        </template>
       </div>
 
       <div class="action-list">
@@ -91,8 +149,8 @@ async function handleLogout() {
           class="action-card"
           @click="router.push(item.path)"
         >
-          <span class="action-icon" :style="{ background: `${item.color}18`, color: item.color }">
-            {{ item.icon }}
+          <span class="action-icon" :style="{ background: `${item.color}14` }">
+            <van-icon :name="item.icon" size="22" :color="item.color" />
           </span>
           <span class="action-text">
             <span class="action-title">{{ item.title }}</span>
@@ -156,18 +214,70 @@ async function handleLogout() {
   opacity: 0.85;
 }
 
-.summary-bar {
+.dashboard-section {
   margin-bottom: 16px;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: #fff;
-  font-size: 14px;
-  color: #606266;
-  text-align: center;
 }
 
-.summary-bar strong {
-  color: #409eff;
+.overview-card {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.overview-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f0f2f5;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.overview-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  padding: 4px 0 8px;
+}
+
+.overview-item {
+  padding: 12px 14px;
+}
+
+.overview-item-wide {
+  grid-column: 1 / -1;
+  border-top: 1px solid #f5f7fa;
+}
+
+.overview-item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.overview-icon {
+  flex-shrink: 0;
+}
+
+.overview-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.overview-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #303133;
+  line-height: 1.2;
+}
+
+.overview-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #a8abb2;
+  line-height: 1.4;
 }
 
 .action-list {
