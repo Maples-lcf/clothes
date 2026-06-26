@@ -18,7 +18,7 @@ export interface GenerateXianyuCopyResponse {
   error?: string
 }
 
-async function requestLocal(params: GenerateXianyuCopyParams) {
+async function requestApi(params: GenerateXianyuCopyParams) {
   const { data: sessionData } = await supabase.auth.getSession()
   const token = sessionData.session?.access_token
   if (!token) throw new Error('请先登录')
@@ -43,9 +43,6 @@ async function requestLocal(params: GenerateXianyuCopyParams) {
   try {
     payload = (await response.json()) as GenerateXianyuCopyResponse
   } catch {
-    if (response.status === 404) {
-      throw new Error('本地 AI 接口未就绪，请重启 mobile 开发服务（npm run dev）')
-    }
     throw new Error(`AI 文案服务异常（HTTP ${response.status}）`)
   }
 
@@ -68,16 +65,7 @@ async function requestEdge(params: GenerateXianyuCopyParams) {
     },
   })
 
-  if (error) {
-    if (
-      error.message?.includes('Edge Function') ||
-      error.message?.includes('404') ||
-      error.message?.includes('Failed to send')
-    ) {
-      throw new Error('AI 文案服务未部署，请在 mobile/.env.local 配置 AI_VISION_API_KEY 后重启 dev')
-    }
-    throw error
-  }
+  if (error) throw error
 
   const payload = data as GenerateXianyuCopyResponse | null
   if (!payload?.ok || !payload.name || !payload.description) {
@@ -87,10 +75,16 @@ async function requestEdge(params: GenerateXianyuCopyParams) {
   return payload
 }
 
-/** 开发环境走本地 Vite 中间件；生产环境走 Supabase Edge Function */
+/** 优先同源 API（Vercel Serverless / 本地 Vite 中间件），失败再试 Edge Function */
 export async function generateXianyuCopy(params: GenerateXianyuCopyParams) {
-  if (import.meta.env.DEV) {
-    return requestLocal(params)
+  try {
+    return await requestApi(params)
+  } catch (apiError) {
+    if (import.meta.env.DEV) throw apiError
+    try {
+      return await requestEdge(params)
+    } catch {
+      throw apiError
+    }
   }
-  return requestEdge(params)
 }
